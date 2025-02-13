@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "ai-code-review"
+version = "0.1.0"
+description = ""
+authors = ["Raynor <jonggu.woo@fitpet.co.kr>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+black = "^25.1.0"
+python-dotenv = "^1.0.1"
+requests = "^2.32.3"
+langchain = "^0.3.18"
+langchain-community = "^0.3.17"
+langchain-ollama = "^0.2.3"
+colorful-print = "^0.1.0"
+unidiff = "^0.7.5"
+
+[tool.black]
+line-length = 120
+target-version = ['py312']
+skip-string-normalization = true
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
