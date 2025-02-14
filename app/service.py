@@ -8,7 +8,7 @@ from app.llm_api import LlmAPI
 from app.utils import split_pr_diff_by_file, split_patch_files_by_patch_types
 
 
-class ReviewService:
+class LlmReviewService:
 
     @classmethod
     def review(
@@ -19,6 +19,7 @@ class ReviewService:
         repository: str,
         pr_number: int,
     ):
+        color.green("Start Review")
         pr_response = GithubAPI.get_pr(github_token, repository, pr_number).json()
         head_commit_id = pr_response["head"]["sha"]
 
@@ -30,7 +31,7 @@ class ReviewService:
         for patch in added_patch_files:
             hunk: Hunk
             hunk = patch[0]
-            color.yellow(f"\n{patch.path}, review start", bold=True, itailic=True, underline=True)
+            color.green(f"\n{patch.path}, review start", bold=True, itailic=True, underline=True)
 
             _review_and_comment(
                 github_token=github_token,
@@ -48,7 +49,7 @@ class ReviewService:
         for patch in modified_patch_files:
             hunk: Hunk
             hunk = max(patch, key=lambda x: x.added)
-            color.yellow(f"\n{patch.path}, review start", bold=True, itailic=True, underline=True)
+            color.green(f"\n{patch.path}, review start", bold=True, itailic=True, underline=True)
 
             _review_and_comment(
                 github_token=github_token,
@@ -62,6 +63,8 @@ class ReviewService:
                 start_line=hunk.target_start,
                 end_line=hunk.target_start + hunk.added,
             )
+
+        color.green("Review Finished")
 
 
 def _review_and_comment(
@@ -77,9 +80,11 @@ def _review_and_comment(
     end_line: int,
 ):
     code_review = LlmAPI.request_code_review(groq_api_key, groq_model, diff)
-    code_review_comment = code_review.format_for_pr_review_comment()
+    if code_review is None:
+        return
 
-    color.yellow("Create review comment.")
+    code_review_comment = code_review.format_for_pr_review_comment()
+    color.green("Create review comment.")
     GithubAPI.create_review_comment(
         token=github_token,
         repository=repository,
@@ -91,4 +96,4 @@ def _review_and_comment(
         end_line=end_line,
         side="RIGHT",
     )
-    time.sleep(60000)
+    time.sleep(60)

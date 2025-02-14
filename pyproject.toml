@@ -17,6 +17,7 @@ colorful-print = "^0.1.0"
 unidiff = "^0.7.5"
 fastapi = "^0.115.8"
 uvicorn = { extras = ["standard"], version = "^0.34.0" }
+langchain-experimental = "^0.3.4"
 
 [tool.black]
 line-length = 120

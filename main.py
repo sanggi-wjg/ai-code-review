@@ -1,33 +1,17 @@
-import os
-
 import uvicorn
-from dotenv import load_dotenv
 from fastapi import FastAPI, BackgroundTasks
-from pydantic import BaseModel
 from starlette import status
 
-from app.service import ReviewService
-
-load_dotenv()
-
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-
+from app.dto.review_request_dto import ReviewRequestDto
+from app.service import LlmReviewService
 
 app = FastAPI()
 
 
-class ReviewRequestDto(BaseModel):
-    github_token: str
-    groq_api_key: str
-    groq_model: str = "deepseek-r1-distill-llama-70b"
-    repository: str
-    pr_number: int
-
-
 @app.post("/assistant/review", status_code=status.HTTP_202_ACCEPTED)
-async def request_review(review_request_dto: ReviewRequestDto, background_tasks: BackgroundTasks):
+async def review_request(review_request_dto: ReviewRequestDto, background_tasks: BackgroundTasks):
     background_tasks.add_task(
-        ReviewService.review,
+        LlmReviewService.review,
         review_request_dto.github_token,
         review_request_dto.groq_api_key,
         review_request_dto.groq_model,
@@ -43,5 +27,3 @@ if __name__ == '__main__':
         reload=False,
         use_colors=True,
     )
-    # main("FitpetKorea/fitpetmall-backend", 4007, "deepseek-r1:14b")
-    # main("FitpetKorea/fitpetmall-backend-v4", 2658, "deepseek-r1-distill-llama-70b")
