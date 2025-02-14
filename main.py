@@ -24,6 +24,7 @@ async def review_request(review_request_dto: ReviewRequestDto, background_tasks:
 if __name__ == '__main__':
     uvicorn.run(
         "main:app",
+        port=8000,
         reload=False,
         use_colors=True,
     )

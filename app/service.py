@@ -80,11 +80,12 @@ def _review_and_comment(
     end_line: int,
 ):
     code_review = LlmAPI.request_code_review(groq_api_key, groq_model, diff)
-    if code_review is None:
+    if code_review is None or not code_review.has_issues:
         return
 
     code_review_comment = code_review.format_for_pr_review_comment()
     color.green("Create review comment.")
+
     GithubAPI.create_review_comment(
         token=github_token,
         repository=repository,
@@ -96,4 +97,4 @@ def _review_and_comment(
         end_line=end_line,
         side="RIGHT",
     )
-    time.sleep(60)
+    # time.sleep(60)

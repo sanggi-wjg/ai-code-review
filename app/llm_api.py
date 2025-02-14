@@ -15,14 +15,18 @@ class CodeReviewIssue(BaseModel):
         description="Issue category (naming/security/performance)", enum=["naming", "security", "performance"]
     )
     description: str = Field(description="Detailed description of the identified issue")
-    suggestion: str = Field(description="Concrete code suggestion for improvement")
+    suggestion: str = Field(
+        description="Concrete code suggestion for improvement, including code examples where applicable"
+    )
     severity: str = Field(description="Issue severity level", enum=["low", "medium", "high"])
 
 
 class CodeReviewResult(BaseModel):
     """Represents the result of code review."""
 
-    summary: str = Field(description="Overall summary of the code review in Korean", default="")
+    summary: str = Field(
+        description="Overall summary of the code review in Korean, with detailed explanation", default=""
+    )
     issues: List[CodeReviewIssue] = Field(description="List of identified issues with details", default_factory=list)
     has_issues: bool = Field(description="Indicates whether any critical issues were found in the code", default=False)
     review_status: str = Field(
@@ -39,17 +43,17 @@ class CodeReviewResult(BaseModel):
 
         def get_status_header(status: str) -> str:
             return {
-                "passed": "## ✅ 코드 리뷰 완료",
-                "needs_changes": "## ⚠️ 수정이 필요한 사항이 있습니다",
-                "critical_issues": "## 🚨 중요한 문제가 발견 되었습니다",
-            }.get(status, "## 코드 리뷰 결과")
+                "passed": "# ✅ 코드 리뷰 완료",
+                "needs_changes": "# ⚠️ 수정이 필요한 사항이 있습니다",
+                "critical_issues": "# 🚨 중요한 문제가 발견 되었습니다 🚨",
+            }.get(status, "# 코드 리뷰 결과")
 
         def get_issue_category_title(category_type: str) -> str:
             return {
-                "naming": "📝 네이밍 이슈",
-                "security": "🔒 보안 이슈",
-                "performance": "⚡ 성능 이슈",
-            }.get(category_type, "😢 이슈")
+                "naming": "## 📝 네이밍 이슈",
+                "security": "## 🔒 보안 이슈",
+                "performance": "## ⚡ 성능 이슈",
+            }.get(category_type, "## 🐜 이슈")
 
         comment = f"{get_status_header(self.review_status)}\n\n"
         comment += f"{self.summary}\n\n"
@@ -57,13 +61,12 @@ class CodeReviewResult(BaseModel):
         if not self.has_issues:
             return comment
 
-        comment += "### 발견된 이슈\n\n"
+        comment += "# 발견된 이슈\n\n"
         for issue in self.issues:
-            comment += f"#### {get_issue_category_title(issue.category)}\n\n"
-            emoji = get_severity_emoji(issue.severity)
-            comment += f"{emoji} **문제점**\n"
+            comment += f"{get_issue_category_title(issue.category)}\n\n"
+            comment += f"### {get_severity_emoji(issue.severity)} **문제점**\n"
             comment += f"{issue.description}\n\n"
-            comment += f"💡 **개선 제안**\n"
+            comment += f"### 💡 **개선 제안**\n"
             comment += f"{issue.suggestion}\n\n"
 
         return comment
@@ -94,13 +97,19 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
             ]
         )
 
-        llm = ChatGroq(model=groq_model, temperature=0.5, api_key=groq_api_key).bind_tools([CodeReviewResult])
-        # llm = OllamaFunctions(model="exaone3.5:7.8b", format="json").bind_tools([CodeReviewResult])
+        # llm = ChatGroq(
+        #     model=groq_model,
+        #     temperature=0.5,
+        #     api_key=groq_api_key,
+        #     max_tokens=6000,
+        # ).bind_tools([CodeReviewResult])
+        llm = OllamaFunctions(model="exaone3.5:7.8b", format="json").bind_tools([CodeReviewResult])  # for local testing
         chain = prompt | llm
 
         try:
             chat_response = chain.invoke({"changes": changes})
-            color.yellow(chat_response.response_metadata)
+            if chat_response.response_metadata:
+                color.yellow(chat_response.response_metadata)
 
             code_review_result = CodeReviewResult.model_validate(chat_response.tool_calls[0]["args"])
             return code_review_result
