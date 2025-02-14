@@ -3,7 +3,7 @@ import os
 import re
 from typing import Dict, List, Tuple
 
-from unidiff import PatchSet, Hunk, PatchedFile
+from unidiff import PatchSet, PatchedFile
 
 
 def split_pr_diff_by_file(diff: str) -> Dict[str, str]:
