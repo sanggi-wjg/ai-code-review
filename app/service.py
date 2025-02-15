@@ -8,7 +8,7 @@ from app.llm_api import LlmAPI
 from app.utils import split_pr_diff_by_file, split_patch_files_by_patch_types
 
 
-class LlmReviewService:
+class CodeReviewService:
 
     @classmethod
     def review(
@@ -19,9 +19,8 @@ class LlmReviewService:
         repository: str,
         pr_number: int,
     ):
-        color.green("Start Review")
-        pr_response = GithubAPI.get_pr(github_token, repository, pr_number).json()
-        head_commit_id = pr_response["head"]["sha"]
+        pr_response = GithubAPI.get_pr(github_token, repository, pr_number)
+        head_commit_id = pr_response.json()["head"]["sha"]
 
         pr_diff_response = GithubAPI.get_pr_diff(github_token, repository, pr_number)
         diff_by_file = split_pr_diff_by_file(pr_diff_response.text)
@@ -31,9 +30,10 @@ class LlmReviewService:
         for patch in added_patch_files:
             hunk: Hunk
             hunk = patch[0]
+            start_line, end_line = hunk.target_start, hunk.target_length
             color.green(f"\n{patch.path}, review start", bold=True, itailic=True, underline=True)
 
-            _review_and_comment(
+            cls._review_and_left_comment(
                 github_token=github_token,
                 groq_api_key=groq_api_key,
                 groq_model=groq_model,
@@ -42,16 +42,17 @@ class LlmReviewService:
                 head_commit_id=head_commit_id,
                 diff=diff_by_file[patch.path],
                 patch=patch,
-                start_line=hunk.target_start,
-                end_line=hunk.target_length,
+                start_line=start_line,
+                end_line=end_line,
             )
 
         for patch in modified_patch_files:
             hunk: Hunk
             hunk = max(patch, key=lambda x: x.added)
+            start_line, end_line = hunk.target_start, hunk.target_start + hunk.added
             color.green(f"\n{patch.path}, review start", bold=True, itailic=True, underline=True)
 
-            _review_and_comment(
+            cls._review_and_left_comment(
                 github_token=github_token,
                 groq_api_key=groq_api_key,
                 groq_model=groq_model,
@@ -60,41 +61,44 @@ class LlmReviewService:
                 head_commit_id=head_commit_id,
                 diff=diff_by_file[patch.path],
                 patch=patch,
-                start_line=hunk.target_start,
-                end_line=hunk.target_start + hunk.added,
+                start_line=start_line,
+                end_line=end_line,
             )
 
-        color.green("Review Finished")
+    @classmethod
+    def _review_and_left_comment(
+        cls,
+        github_token: str,
+        groq_api_key: str,
+        groq_model: str,
+        repository: str,
+        pr_number: int,
+        head_commit_id: str,
+        diff: str,
+        patch: PatchedFile,
+        start_line: int,
+        end_line: int,
+    ):
+        review_result = LlmAPI.chat_to_review_code(groq_api_key, groq_model, diff)
+        if review_result is None or not review_result.has_issues:
+            return
+
+        GithubAPI.create_review_comment(
+            token=github_token,
+            repository=repository,
+            pr_number=pr_number,
+            comment=review_result.format_to_comment(),
+            commit_id=head_commit_id,
+            filename=patch.path,
+            start_line=start_line,
+            end_line=end_line,
+            side="RIGHT",
+        )
+        # time.sleep(60)
 
 
-def _review_and_comment(
-    github_token: str,
-    groq_api_key: str,
-    groq_model: str,
-    repository: str,
-    pr_number: int,
-    head_commit_id: str,
-    diff: str,
-    patch: PatchedFile,
-    start_line: int,
-    end_line: int,
-):
-    code_review = LlmAPI.request_code_review(groq_api_key, groq_model, diff)
-    if code_review is None or not code_review.has_issues:
-        return
+class CodeChatService:
 
-    code_review_comment = code_review.format_for_pr_review_comment()
-    color.green("Create review comment.")
-
-    GithubAPI.create_review_comment(
-        token=github_token,
-        repository=repository,
-        pr_number=pr_number,
-        comment=code_review_comment,
-        commit_id=head_commit_id,
-        filename=patch.path,
-        start_line=start_line,
-        end_line=end_line,
-        side="RIGHT",
-    )
-    # time.sleep(60)
+    @classmethod
+    def chat(cls, code: str) -> str:
+        return LlmAPI.chat_to_coding_assist(code)
