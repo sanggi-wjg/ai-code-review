@@ -1,8 +1,21 @@
+import os
+
+import git
 import requests
 from colorful_print import color
 
 
 class GithubAPI:
+
+    @classmethod
+    def clone_or_pull(cls, repository: str, source_path: str) -> bool:
+        url = f"https://github.com/{repository}.git"
+
+        if os.path.exists(source_path):
+            git.Repo(source_path).git.pull()
+        else:
+            git.Repo.clone_from(url, source_path)
+        return True
 
     @classmethod
     def get_pr(

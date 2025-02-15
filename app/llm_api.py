@@ -1,9 +1,13 @@
 import traceback
-from typing import List, Optional
+from typing import List, Optional, Generator
 
 from colorful_print import color
+from langchain.globals import set_verbose
+from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.runnables import RunnablePassthrough
 from langchain_experimental.llms.ollama_functions import OllamaFunctions
 from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
@@ -135,15 +139,38 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
             return None
 
     @classmethod
-    def chat_to_coding_assist(cls, code: str) -> str:
+    def chat_to_coding_assist_stream(
+        cls,
+        documents: List[Document],
+        code: str,
+        consideration: str,
+    ) -> Generator[str, None, None]:
+        user_message = f"""
+Make this CODE better.
+
+# CONSIDERATION: 
+{consideration}
+
+# PROJECT SOURCE CODE SEARCH: 
+{documents}
+
+# CODE:
+{code}""".strip()
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", cls.SYSTEM_MESSAGE_CODING_ASSIST),
-                ("human", "Make this code better.\n{code}"),
+                ("human", user_message),
             ]
         )
-        llm = ChatOllama(model="deepseek-coder-v2:16b")
-
+        # llm = ChatOllama(model="deepseek-coder-v2:16b")
+        llm = ChatOllama(model="qwen2.5-coder:14b")
         chain = prompt | llm | StrOutputParser()
-        chat_response = chain.invoke({"code": code})
-        return chat_response
+
+        for token in chain.stream(
+            {
+                "consideration": consideration,
+                "documents": [doc.page_content for doc in documents],
+                "code": code,
+            }
+        ):
+            yield token

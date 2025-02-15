@@ -18,6 +18,9 @@ unidiff = "^0.7.5"
 fastapi = "^0.115.8"
 uvicorn = { extras = ["standard"], version = "^0.34.0" }
 langchain-experimental = "^0.3.4"
+gitpython = "^3.1.44"
+langchain-chroma = "^0.2.2"
+unstructured = {extras = ["md"], version = "^0.16.20"}
 
 [tool.black]
 line-length = 120
