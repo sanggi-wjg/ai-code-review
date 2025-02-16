@@ -21,6 +21,7 @@ langchain-experimental = "^0.3.4"
 gitpython = "^3.1.44"
 langchain-chroma = "^0.2.2"
 unstructured = {extras = ["md"], version = "^0.16.20"}
+redis = "^5.2.1"
 
 [tool.black]
 line-length = 120

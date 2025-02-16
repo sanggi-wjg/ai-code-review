@@ -2,14 +2,10 @@ import traceback
 from typing import List, Optional, Generator
 
 from colorful_print import color
-from langchain.globals import set_verbose
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.retrievers import BaseRetriever
-from langchain_core.runnables import RunnablePassthrough
 from langchain_experimental.llms.ollama_functions import OllamaFunctions
-from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field, ValidationError
 
@@ -156,6 +152,40 @@ Make this CODE better.
 
 # CODE:
 {code}""".strip()
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", cls.SYSTEM_MESSAGE_CODING_ASSIST),
+                ("human", user_message),
+            ]
+        )
+        # llm = ChatOllama(model="deepseek-coder-v2:16b")
+        llm = ChatOllama(model="qwen2.5-coder:14b")
+        chain = prompt | llm | StrOutputParser()
+
+        for token in chain.stream(
+            {
+                "consideration": consideration,
+                "documents": [doc.page_content for doc in documents],
+                "code": code,
+            }
+        ):
+            yield token
+
+    @classmethod
+    def chat_to_generate_code_stream(
+        cls,
+        documents: List[Document],
+        code: str,
+        consideration: str,
+    ) -> Generator[str, None, None]:
+        user_message = """
+Please generate awesome code. I want this code:{code}.
+
+# PROJECT SOURCE CODE SEARCH: 
+{documents}
+        
+# CONSIDERATION: 
+{consideration}""".strip()
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", cls.SYSTEM_MESSAGE_CODING_ASSIST),

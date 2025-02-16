@@ -3,7 +3,6 @@ from typing import Generator, List
 
 from colorful_print import color
 from langchain.embeddings import CacheBackedEmbeddings
-from langchain.globals import set_verbose
 from langchain.storage import LocalFileStore
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import DirectoryLoader
@@ -111,22 +110,15 @@ class CodeReviewService:
 class CodeChatService:
 
     @classmethod
-    def chat(
+    def chat_to_coding_assist(
         cls,
         code: str,
         repository: str,
+        language: str,
         search: str,
         consideration: str,
     ) -> Generator[str, None, None]:
-
-        documents = VectorStoreService._load_documents(repository, Language.PYTHON)
-        vector_db = Chroma.from_documents(
-            documents=documents,
-            embedding=VectorStoreService._get_embeddings(repository),
-            persist_directory=f"chroma.{repository}",
-        )
-
-        # vector_db = VectorStoreService.get_vector_store(repository)
+        vector_db = cls.get_vector_store(repository, language)
         documents = vector_db.similarity_search(query=search, k=5)
         return LlmAPI.chat_to_coding_assist_stream(
             documents,
@@ -134,8 +126,22 @@ class CodeChatService:
             consideration,
         )
 
-
-class VectorStoreService:
+    @classmethod
+    def chat_to_generate_code(
+        cls,
+        code: str,
+        repository: str,
+        language: str,
+        search: str,
+        consideration: str,
+    ) -> Generator[str, None, None]:
+        vector_db = cls.get_vector_store(repository, language)
+        documents = vector_db.similarity_search(query=search, k=5)
+        return LlmAPI.chat_to_generate_code_stream(
+            documents,
+            code,
+            consideration,
+        )
 
     @classmethod
     def _load_documents(cls, repository: str, language: str) -> List[Document]:
@@ -173,18 +179,17 @@ class VectorStoreService:
         return cached_embeddings
 
     @classmethod
-    def get_vector_store(cls, repository: str) -> VectorStore:
-        embeddings = cls._get_embeddings(repository)
-        return Chroma(
-            embedding_function=embeddings,
-            persist_directory=f"chroma.{repository}",
+    def get_vector_store(cls, repository: str, language: str) -> VectorStore:
+        repository_replaced = repository.replace("/", ".")
+
+        documents = cls._load_documents(repository, language)
+        embeddings = cls._get_embeddings(repository_replaced)
+        return Chroma.from_documents(
+            documents=documents,
+            embedding=embeddings,
+            persist_directory=f"chroma.{repository_replaced}",
         )
 
     @classmethod
     def index(cls, repository: str, language: str):
-        documents = cls._load_documents(repository, language)
-        Chroma.from_documents(
-            documents=documents,
-            embedding=cls._get_embeddings(repository),
-            persist_directory=f"chroma.{repository}",
-        )
+        return cls.get_vector_store(repository, language)

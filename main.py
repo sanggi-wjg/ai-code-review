@@ -6,7 +6,7 @@ from starlette import status
 from starlette.responses import StreamingResponse
 
 from app.dto.request_dto import CodeReviewRequestDto, CodeChatRequestDto, RepositoryIndexRequestDto
-from app.service import CodeReviewService, CodeChatService, VectorStoreService
+from app.service import CodeReviewService, CodeChatService
 
 app = FastAPI()
 
@@ -33,7 +33,7 @@ async def repositories_index(
     background_tasks: BackgroundTasks,
 ) -> Dict[str, str]:
     background_tasks.add_task(
-        VectorStoreService.index,
+        CodeChatService.index,
         request_dto.repository,
         request_dto.language,
     )
@@ -43,13 +43,28 @@ async def repositories_index(
 @app.post("/assistant/repositories/chat", status_code=status.HTTP_200_OK)
 async def repositories_code_chat(request_dto: CodeChatRequestDto) -> StreamingResponse:
     return StreamingResponse(
-        CodeChatService.chat(
+        CodeChatService.chat_to_coding_assist(
             request_dto.code,
             request_dto.repository,
+            request_dto.language,
             request_dto.search,
             request_dto.consideration,
         ),
-        # LlmAPI.chat_to_coding_assist_stream(request_dto.code),
+        status_code=status.HTTP_200_OK,
+        media_type="text/event-stream",
+    )
+
+
+@app.post("/assistant/repositories/generate", status_code=status.HTTP_200_OK)
+async def repositories_code_regenerate(request_dto: CodeChatRequestDto) -> StreamingResponse:
+    return StreamingResponse(
+        CodeChatService.chat_to_generate_code(
+            request_dto.code,
+            request_dto.repository,
+            request_dto.language,
+            request_dto.search,
+            request_dto.consideration,
+        ),
         status_code=status.HTTP_200_OK,
         media_type="text/event-stream",
     )
@@ -59,7 +74,7 @@ if __name__ == '__main__':
     uvicorn.run(
         "main:app",
         port=8000,
-        reload=True,
+        reload=False,
         reload_delay=1,
         use_colors=True,
     )

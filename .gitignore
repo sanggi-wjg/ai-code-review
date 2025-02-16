@@ -4,5 +4,5 @@
 *.ipr
 
 app/sources
-app/chroma*/**
-app/embeddings*/**
+chroma*/**
+embeddings*/**
