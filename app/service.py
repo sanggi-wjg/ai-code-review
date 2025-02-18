@@ -14,7 +14,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
 from unidiff import Hunk, PatchedFile
 
 from app.github_api import GithubAPI
-from app.llm_api import LlmAPI
+from app.llm_api import LlmAPI, CodeReviewResult
 from app.utils import split_pr_diff_by_file, split_patch_files_by_patch_types
 
 
@@ -23,12 +23,13 @@ class CodeReviewService:
     @classmethod
     def review(
         cls,
+        model: str,
         github_token: str,
-        groq_api_key: str,
-        groq_model: str,
         repository: str,
         pr_number: int,
     ):
+        color.green(f"{repository}:{pr_number} review start", underline=True)
+
         pr_response = GithubAPI.get_pr(github_token, repository, pr_number)
         head_commit_id = pr_response.json()["head"]["sha"]
 
@@ -41,12 +42,11 @@ class CodeReviewService:
             hunk: Hunk
             hunk = patch[0]
             start_line, end_line = hunk.target_start, hunk.target_length
-            color.green(f"\n{patch.path}, review start", bold=True, itailic=True, underline=True)
+            color.green(f"\n{patch.path}, review start", bold=True, underline=True)
 
             cls._review_and_left_comment(
+                model=model,
                 github_token=github_token,
-                groq_api_key=groq_api_key,
-                groq_model=groq_model,
                 repository=repository,
                 pr_number=pr_number,
                 head_commit_id=head_commit_id,
@@ -60,12 +60,11 @@ class CodeReviewService:
             hunk: Hunk
             hunk = max(patch, key=lambda x: x.added)
             start_line, end_line = hunk.target_start, hunk.target_start + hunk.added
-            color.green(f"\n{patch.path}, review start", bold=True, itailic=True, underline=True)
+            color.green(f"\n{patch.path}, review start", bold=True, underline=True)
 
             cls._review_and_left_comment(
+                model=model,
                 github_token=github_token,
-                groq_api_key=groq_api_key,
-                groq_model=groq_model,
                 repository=repository,
                 pr_number=pr_number,
                 head_commit_id=head_commit_id,
@@ -75,12 +74,13 @@ class CodeReviewService:
                 end_line=end_line,
             )
 
+        color.green(f"\n{repository}:{pr_number} review end", underline=True)
+
     @classmethod
     def _review_and_left_comment(
         cls,
+        model: str,
         github_token: str,
-        groq_api_key: str,
-        groq_model: str,
         repository: str,
         pr_number: int,
         head_commit_id: str,
@@ -89,22 +89,29 @@ class CodeReviewService:
         start_line: int,
         end_line: int,
     ):
-        review_result = LlmAPI.chat_to_review_code(groq_api_key, groq_model, diff)
-        if review_result is None or not review_result.has_issues:
+        review_result = LlmAPI.chat_to_review_code(model, diff)
+        if review_result is None:
             return
+
+        color.yellow(review_result)
+        if isinstance(review_result, CodeReviewResult):
+            if not review_result.has_issues:
+                return
+            comment = review_result.format_to_comment()
+        else:
+            comment = review_result
 
         GithubAPI.create_review_comment(
             token=github_token,
             repository=repository,
             pr_number=pr_number,
-            comment=review_result.format_to_comment(),
+            comment=comment,
             commit_id=head_commit_id,
             filename=patch.path,
             start_line=start_line,
             end_line=end_line,
             side="RIGHT",
         )
-        # time.sleep(60)
 
 
 class CodeChatService:

@@ -1,5 +1,5 @@
 import traceback
-from typing import List, Optional, Generator
+from typing import List, Optional, Generator, Union
 
 from colorful_print import color
 from langchain_core.documents import Document
@@ -92,7 +92,7 @@ class CodeReviewResult(BaseModel):
 class LlmAPI:
 
     SYSTEM_MESSAGE_CODE_REVIEW = """
-You are a meticulous and highly skilled code reviewer. Your task is to analyze the following code changes and provide feedback only if you identify any of the following critical issues:
+You are a meticulous and highly skilled code reviewer. Your task is to analyze the following code changes and provide feedback if you identify any of the following critical issues:
 - Inappropriate function or variable names that are misleading, unclear, or violate naming conventions, making the code harder to understand or maintain.
 - Security vulnerabilities, such as injection risks, improper authentication, data leaks, or insecure dependencies.
 - Performance bottlenecks, including inefficient algorithms, redundant computations, memory leaks, or unnecessary resource usage.
@@ -107,32 +107,56 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
     @classmethod
     def chat_to_review_code(
         cls,
-        groq_api_key: str,
-        groq_model: str,
+        model: str,
         changes: str,
-    ) -> Optional[CodeReviewResult]:
+    ) -> Union[Optional[CodeReviewResult], str]:
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", cls.SYSTEM_MESSAGE_CODE_REVIEW),
                 ("human", "{changes}"),
             ]
         )
-        # llm = ChatGroq(model=groq_model, temperature=0.5, api_key=groq_api_key, max_tokens=6000).bind_tools(
-        #     [CodeReviewResult]
-        # )
-        llm = OllamaFunctions(model="exaone3.5:7.8b", format="json").bind_tools([CodeReviewResult])
 
-        chain = prompt | llm
-        chat_response = chain.invoke({"changes": changes})
-        if chat_response.response_metadata:
-            color.yellow(chat_response.response_metadata)
+        if model in ("exaone3.5:7.8b",):
+            try:
+                llm = OllamaFunctions(model="exaone3.5:7.8b", format="json").bind_tools([CodeReviewResult])
+                chain = prompt | llm
+                chat_response = chain.invoke({"changes": changes})
+                if chat_response.response_metadata:
+                    color.yellow(chat_response.response_metadata)
 
-        try:
-            code_review_result = CodeReviewResult.model_validate(chat_response.tool_calls[0]["args"])
-            return code_review_result
-        except ValidationError:
-            traceback.print_exc()
-            return None
+                code_review_result = CodeReviewResult.model_validate(chat_response.tool_calls[0]["args"])
+                return code_review_result
+            except:
+                traceback.print_exc()
+                return None
+
+        elif model in ("qwen2.5-coder:14b", "deepseek-coder-v2:16b"):
+            try:
+                llm = ChatOllama(model=model)
+                chain = prompt | llm | StrOutputParser()
+                chat_response = chain.invoke({"changes": changes})
+                return chat_response
+            except:
+                traceback.print_exc()
+                return None
+
+        else:
+            raise ValueError(f"Unsupported model: {model}")
+
+    @classmethod
+    def chat_to_review_code_with_unstructured_stream(cls, changes: str) -> Generator[str, None, None]:
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", cls.SYSTEM_MESSAGE_CODE_REVIEW),
+                ("human", "{changes}"),
+            ]
+        )
+        llm = ChatOllama(model="qwen2.5-coder:14b")
+        chain = prompt | llm | StrOutputParser()
+
+        for token in chain.stream({"changes": changes}):
+            yield token
 
     @classmethod
     def chat_to_coding_assist_stream(

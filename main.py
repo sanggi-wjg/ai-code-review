@@ -1,5 +1,6 @@
-from typing import Dict
+from typing import Dict, List
 
+import requests
 import uvicorn
 from fastapi import FastAPI, BackgroundTasks
 from starlette import status
@@ -11,6 +12,13 @@ from app.service import CodeReviewService, CodeChatService
 app = FastAPI()
 
 
+@app.get("/assistants/models", status_code=status.HTTP_200_OK)
+async def models() -> List[str]:
+    response = requests.get("http://localhost:11434/api/tags")
+    response.raise_for_status()
+    return [r["name"] for r in response.json()["models"]]
+
+
 @app.post("/assistant/review", status_code=status.HTTP_202_ACCEPTED)
 async def code_review_request(
     request_dto: CodeReviewRequestDto,
@@ -18,9 +26,8 @@ async def code_review_request(
 ) -> Dict[str, str]:
     background_tasks.add_task(
         CodeReviewService.review,
+        request_dto.model,
         request_dto.github_token,
-        request_dto.groq_api_key,
-        request_dto.groq_model,
         request_dto.repository,
         request_dto.pr_number,
     )
