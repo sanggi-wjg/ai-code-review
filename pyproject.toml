@@ -12,12 +12,15 @@ requests = "^2.32.3"
 langchain = "^0.3.18"
 langchain-community = "^0.3.17"
 langchain-ollama = "^0.2.3"
-langchain-groq = "^0.2.4"
+langchain-chroma = "^0.2.2"
+langchain-experimental = "^0.3.4"
+unstructured = { extras = ["md"], version = "^0.16.20" }
 colorful-print = "^0.1.0"
 unidiff = "^0.7.5"
 fastapi = "^0.115.8"
 uvicorn = { extras = ["standard"], version = "^0.34.0" }
-langchain-experimental = "^0.3.4"
+gitpython = "^3.1.44"
+redis = "^5.2.1"
 
 [tool.black]
 line-length = 120

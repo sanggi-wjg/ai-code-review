@@ -1,8 +1,12 @@
+import abc
+import functools
 import io
 import os
+import pickle
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any, Type, Callable
 
+import redis
 from unidiff import PatchSet, PatchedFile
 
 
@@ -49,3 +53,66 @@ def split_patch_files_by_patch_types(diff: str) -> Tuple[List[PatchedFile], List
 
 def clean_chat_response(chat_response: str):
     return re.sub(r'<think>.*?</think>', '', chat_response, flags=re.DOTALL).strip()
+
+
+class CacheHandler(abc.ABC):
+
+    def __init__(self, key: str):
+        self.key = key
+
+    @abc.abstractmethod
+    def is_cached(self) -> bool:
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def read(self) -> Any:
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def write(self, dataset: Any):
+        raise NotImplementedError()
+
+
+class RedisCacheHandler(CacheHandler):
+
+    def __init__(self, key: str):
+        super().__init__(key)
+        self.client = redis.StrictRedis(
+            host=os.getenv("REDIS_HOST", "localhost"),
+            port=os.getenv("REDIS_PORT", 6379),
+            db=os.getenv("REDIS_DB", 1),
+        )
+        self.expire_ttl = os.getenv("REDIS_EXPIRE_TTL", 60 * 60)
+
+    def is_cached(self) -> bool:
+        return self.client.exists(self.key)
+
+    def read(self) -> Any:
+        return pickle.loads(
+            self.client.get(self.key),
+        )
+
+    def write(self, dataset: Any):
+        self.client.set(
+            name=self.key,
+            value=pickle.dumps(dataset),
+            ex=self.expire_ttl,
+        )
+
+
+def cacheable(key: str, cache_handler: Type[CacheHandler] = RedisCacheHandler):
+
+    def decorator(func: Callable):
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            handler = cache_handler(key)
+            if handler.is_cached():
+                return handler.read()
+
+            handler.write(result := func(*args, **kwargs))
+            return result
+
+        return wrapper
+
+    return decorator

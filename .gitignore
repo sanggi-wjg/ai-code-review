@@ -2,3 +2,7 @@
 *.iws
 *.iml
 *.ipr
+
+app/sources
+chroma*/**
+embeddings*/**
