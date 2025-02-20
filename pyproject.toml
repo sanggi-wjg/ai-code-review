@@ -13,6 +13,7 @@ langchain = "^0.3.18"
 langchain-community = "^0.3.17"
 langchain-ollama = "^0.2.3"
 langchain-chroma = "^0.2.2"
+langchain-milvus = "^0.1.8"
 langchain-experimental = "^0.3.4"
 unstructured = { extras = ["md"], version = "^0.16.20" }
 colorful-print = "^0.1.0"
@@ -21,6 +22,7 @@ fastapi = "^0.115.8"
 uvicorn = { extras = ["standard"], version = "^0.34.0" }
 gitpython = "^3.1.44"
 redis = "^5.2.1"
+jupyter = "^1.1.1"
 
 [tool.black]
 line-length = 120

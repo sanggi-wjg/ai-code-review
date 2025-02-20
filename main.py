@@ -4,7 +4,7 @@ import requests
 import uvicorn
 from fastapi import FastAPI, BackgroundTasks
 from starlette import status
-from starlette.responses import StreamingResponse
+from starlette.responses import StreamingResponse, Response
 
 from app.dto.request_dto import CodeReviewRequestDto, CodeChatRequestDto, RepositoryIndexRequestDto
 from app.service import CodeReviewService, CodeChatService
@@ -13,14 +13,14 @@ app = FastAPI()
 
 
 @app.get("/assistants/models", status_code=status.HTTP_200_OK)
-async def models() -> List[str]:
+async def get_models() -> List[str]:
     response = requests.get("http://localhost:11434/api/tags")
     response.raise_for_status()
     return [r["name"] for r in response.json()["models"]]
 
 
 @app.post("/assistant/review", status_code=status.HTTP_202_ACCEPTED)
-async def code_review_request(
+async def request_code_review(
     request_dto: CodeReviewRequestDto,
     background_tasks: BackgroundTasks,
 ) -> Dict[str, str]:
@@ -35,7 +35,7 @@ async def code_review_request(
 
 
 @app.put("/assistant/repositories/index", status_code=status.HTTP_202_ACCEPTED)
-async def repositories_index(
+async def index_repository(
     request_dto: RepositoryIndexRequestDto,
     background_tasks: BackgroundTasks,
 ) -> Dict[str, str]:
@@ -48,17 +48,10 @@ async def repositories_index(
 
 
 @app.post("/assistant/repositories/chat", status_code=status.HTTP_200_OK)
-async def repositories_code_chat(request_dto: CodeChatRequestDto) -> StreamingResponse:
-    return StreamingResponse(
-        CodeChatService.chat_to_coding_assist(
-            request_dto.code,
-            request_dto.repository,
-            request_dto.language,
-            request_dto.search,
-            request_dto.consideration,
-        ),
-        status_code=status.HTTP_200_OK,
-        media_type="text/event-stream",
+async def repositories_code_chat(request_dto: CodeChatRequestDto) -> dict:
+    return CodeChatService.chat_about_repository(
+        request_dto.repository,
+        request_dto.search,
     )
 
 

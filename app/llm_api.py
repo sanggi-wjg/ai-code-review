@@ -2,12 +2,17 @@ import traceback
 from typing import List, Optional, Generator, Union
 
 from colorful_print import color
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains.retrieval import create_retrieval_chain
+from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain.retrievers import MultiQueryRetriever
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_experimental.llms.ollama_functions import OllamaFunctions
 from langchain_ollama import ChatOllama
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 
 class CodeReviewIssue(BaseModel):
@@ -144,56 +149,40 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
         else:
             raise ValueError(f"Unsupported model: {model}")
 
+    # @classmethod
+    # def chat_to_review_code_with_unstructured_stream(cls, changes: str) -> Generator[str, None, None]:
+    #     prompt = ChatPromptTemplate.from_messages(
+    #         [
+    #             ("system", cls.SYSTEM_MESSAGE_CODE_REVIEW),
+    #             ("human", "{changes}"),
+    #         ]
+    #     )
+    #     llm = ChatOllama(model="qwen2.5-coder:14b")
+    #     chain = prompt | llm | StrOutputParser()
+    #
+    #     for token in chain.stream({"changes": changes}):
+    #         yield token
+
     @classmethod
-    def chat_to_review_code_with_unstructured_stream(cls, changes: str) -> Generator[str, None, None]:
+    def chat_to_ask(cls, retriever: VectorStoreRetriever, search: str) -> dict:
         prompt = ChatPromptTemplate.from_messages(
             [
-                ("system", cls.SYSTEM_MESSAGE_CODE_REVIEW),
-                ("human", "{changes}"),
+                (
+                    "system",
+                    """
+You are an AI assistant specialized in interpreting and refining search results from a vector database containing code-related texts. 
+Your primary task is to analyze retrieved code snippets and rephrase them in a way that accurately aligns with the user’s question.
+""".strip(),
+                ),
+                ("human", "{input}\n{context}"),
             ]
         )
-        llm = ChatOllama(model="qwen2.5-coder:14b")
-        chain = prompt | llm | StrOutputParser()
+        llm = ChatOllama(model="deepseek-r1:14b")
+        qa_chain = create_stuff_documents_chain(llm, prompt)
+        chain = create_retrieval_chain(retriever, qa_chain)
 
-        for token in chain.stream({"changes": changes}):
-            yield token
-
-    @classmethod
-    def chat_to_coding_assist_stream(
-        cls,
-        documents: List[Document],
-        code: str,
-        consideration: str,
-    ) -> Generator[str, None, None]:
-        user_message = f"""
-Make this CODE better.
-
-# CONSIDERATION: 
-{consideration}
-
-# PROJECT SOURCE CODE SEARCH: 
-{documents}
-
-# CODE:
-{code}""".strip()
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", cls.SYSTEM_MESSAGE_CODING_ASSIST),
-                ("human", user_message),
-            ]
-        )
-        # llm = ChatOllama(model="deepseek-coder-v2:16b")
-        llm = ChatOllama(model="qwen2.5-coder:14b")
-        chain = prompt | llm | StrOutputParser()
-
-        for token in chain.stream(
-            {
-                "consideration": consideration,
-                "documents": [doc.page_content for doc in documents],
-                "code": code,
-            }
-        ):
-            yield token
+        chat_response = chain.invoke({"input": "요약해주세요."})
+        return chat_response
 
     @classmethod
     def chat_to_generate_code_stream(

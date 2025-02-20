@@ -9,6 +9,7 @@ from langchain_community.document_loaders import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
+from langchain_milvus import Milvus
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
 from unidiff import Hunk, PatchedFile
@@ -117,21 +118,14 @@ class CodeReviewService:
 class CodeChatService:
 
     @classmethod
-    def chat_to_coding_assist(
+    def chat_about_repository(
         cls,
-        code: str,
         repository: str,
-        language: str,
         search: str,
-        consideration: str,
-    ) -> Generator[str, None, None]:
-        vector_db = cls.get_vector_store(repository, language)
-        documents = vector_db.similarity_search(query=search, k=5)
-        return LlmAPI.chat_to_coding_assist_stream(
-            documents,
-            code,
-            consideration,
-        )
+    ) -> dict:
+        vector_store = cls.get_vector_store(repository)
+        retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 5})
+        return LlmAPI.chat_to_ask(retriever, search)
 
     @classmethod
     def chat_to_generate_code(
@@ -142,7 +136,7 @@ class CodeChatService:
         search: str,
         consideration: str,
     ) -> Generator[str, None, None]:
-        vector_db = cls.get_vector_store(repository, language)
+        vector_db = cls.get_vector_store(repository)
         documents = vector_db.similarity_search(query=search, k=5)
         return LlmAPI.chat_to_generate_code_stream(
             documents,
@@ -151,7 +145,7 @@ class CodeChatService:
         )
 
     @classmethod
-    def _load_documents(cls, repository: str, language: str) -> List[Document]:
+    def load_documents_from(cls, repository: str, language: str) -> List[Document]:
         source_path = os.path.join(os.getcwd(), "sources", repository)
         GithubAPI.clone_or_pull(repository, source_path)
 
@@ -176,27 +170,37 @@ class CodeChatService:
         return documents
 
     @classmethod
-    def _get_embeddings(cls, repository: str) -> Embeddings:
+    def get_embeddings(cls, repository: str) -> Embeddings:
+        repository_replaced = repository.replace("/", "_")
+
         embeddings = OllamaEmbeddings(model="unclemusclez/jina-embeddings-v2-base-code")
         cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
             underlying_embeddings=embeddings,
-            document_embedding_cache=LocalFileStore(f"embeddings.cache.{repository}"),
-            namespace=f"{embeddings.model}.{repository}",
+            document_embedding_cache=LocalFileStore(f"embeddings.cache.{repository_replaced}"),
+            namespace=f"{embeddings.model}.{repository_replaced}",
         )
         return cached_embeddings
 
     @classmethod
-    def get_vector_store(cls, repository: str, language: str) -> VectorStore:
-        repository_replaced = repository.replace("/", ".")
+    def get_vector_store(cls, repository: str, drop_old: bool = False) -> VectorStore:
+        def escape_collection_name(value: str) -> str:
+            # If u need, using regex
+            return value.replace("/", "_").replace("-", "_")
 
-        documents = cls._load_documents(repository, language)
-        embeddings = cls._get_embeddings(repository_replaced)
-        return Chroma.from_documents(
-            documents=documents,
-            embedding=embeddings,
-            persist_directory=f"chroma.{repository_replaced}",
+        repository_replaced = escape_collection_name(repository)
+        return Milvus(
+            embedding_function=cls.get_embeddings(repository),
+            connection_args={"uri": os.getenv("MILVUS_URI", "http://localhost:19530")},
+            collection_name=repository_replaced,
+            collection_description=f"{repository} Vector Store",
+            # metadata_field="metadata",
+            enable_dynamic_field=True,
+            auto_id=True,
+            drop_old=drop_old,
         )
 
     @classmethod
-    def index(cls, repository: str, language: str):
-        return cls.get_vector_store(repository, language)
+    def index(cls, repository: str, language: str) -> List[str]:
+        documents = cls.load_documents_from(repository, language)
+        vector_store = cls.get_vector_store(repository, drop_old=True)
+        return vector_store.add_documents(documents)
