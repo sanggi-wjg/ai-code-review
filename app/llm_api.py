@@ -1,11 +1,9 @@
+import logging
 import traceback
 from typing import List, Optional, Generator, Union
 
-from colorful_print import color
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains.retrieval import create_retrieval_chain
-from langchain.chains.retrieval_qa.base import RetrievalQA
-from langchain.retrievers import MultiQueryRetriever
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -13,6 +11,8 @@ from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_experimental.llms.ollama_functions import OllamaFunctions
 from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class CodeReviewIssue(BaseModel):
@@ -122,15 +122,17 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
             ]
         )
 
+        # 필요시 추상화 ㄱ
         if model in ("exaone3.5:7.8b",):
             try:
                 llm = OllamaFunctions(model="exaone3.5:7.8b", format="json").bind_tools([CodeReviewResult])
                 chain = prompt | llm
                 chat_response = chain.invoke({"changes": changes})
                 if chat_response.response_metadata:
-                    color.yellow(chat_response.response_metadata)
+                    logger.info(chat_response.response_metadata)
 
                 code_review_result = CodeReviewResult.model_validate(chat_response.tool_calls[0]["args"])
+                logger.info(code_review_result)
                 return code_review_result
             except:
                 traceback.print_exc()
@@ -141,6 +143,7 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
                 llm = ChatOllama(model=model)
                 chain = prompt | llm | StrOutputParser()
                 chat_response = chain.invoke({"changes": changes})
+                logger.info(chat_response)
                 return chat_response
             except:
                 traceback.print_exc()
@@ -182,6 +185,7 @@ Your primary task is to analyze retrieved code snippets and rephrase them in a w
         chain = create_retrieval_chain(retriever, qa_chain)
 
         chat_response = chain.invoke({"input": "요약해주세요."})
+        logger.info(chat_response)
         return chat_response
 
     @classmethod

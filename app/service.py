@@ -1,10 +1,9 @@
+import logging
 import os.path
 from typing import Generator, List
 
-from colorful_print import color
 from langchain.embeddings import CacheBackedEmbeddings
 from langchain.storage import LocalFileStore
-from langchain_chroma import Chroma
 from langchain_community.document_loaders import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -18,6 +17,8 @@ from app.github_api import GithubAPI
 from app.llm_api import LlmAPI, CodeReviewResult
 from app.utils import split_pr_diff_by_file, split_patch_files_by_patch_types
 
+logger = logging.getLogger(__name__)
+
 
 class CodeReviewService:
 
@@ -29,7 +30,7 @@ class CodeReviewService:
         repository: str,
         pr_number: int,
     ):
-        color.green(f"{repository}:{pr_number} review start", underline=True)
+        logger.info(f"{repository}:{pr_number} review start")
 
         pr_response = GithubAPI.get_pr(github_token, repository, pr_number)
         head_commit_id = pr_response.json()["head"]["sha"]
@@ -43,7 +44,7 @@ class CodeReviewService:
             hunk: Hunk
             hunk = patch[0]
             start_line, end_line = hunk.target_start, hunk.target_length
-            color.green(f"\n{patch.path}, review start", bold=True, underline=True)
+            logger.info(f"\n{patch.path}, review start")
 
             cls._review_and_left_comment(
                 model=model,
@@ -61,7 +62,7 @@ class CodeReviewService:
             hunk: Hunk
             hunk = max(patch, key=lambda x: x.added)
             start_line, end_line = hunk.target_start, hunk.target_start + hunk.added
-            color.green(f"\n{patch.path}, review start", bold=True, underline=True)
+            logger.info(f"\n{patch.path}, review start")
 
             cls._review_and_left_comment(
                 model=model,
@@ -75,7 +76,7 @@ class CodeReviewService:
                 end_line=end_line,
             )
 
-        color.green(f"\n{repository}:{pr_number} review end", underline=True)
+        logger.info(f"\n{repository}:{pr_number} review end")
 
     @classmethod
     def _review_and_left_comment(
@@ -94,7 +95,7 @@ class CodeReviewService:
         if review_result is None:
             return
 
-        color.yellow(review_result)
+        logger.info(review_result)
         if isinstance(review_result, CodeReviewResult):
             if not review_result.has_issues:
                 return
@@ -201,6 +202,11 @@ class CodeChatService:
 
     @classmethod
     def index(cls, repository: str, language: str) -> List[str]:
+        logger.info("Index start")
+
         documents = cls.load_documents_from(repository, language)
         vector_store = cls.get_vector_store(repository, drop_old=True)
-        return vector_store.add_documents(documents)
+        created_ids = vector_store.add_documents(documents)
+
+        logger.info("Index finished")
+        return created_ids

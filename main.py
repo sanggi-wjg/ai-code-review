@@ -4,12 +4,70 @@ import requests
 import uvicorn
 from fastapi import FastAPI, BackgroundTasks
 from starlette import status
-from starlette.responses import StreamingResponse, Response
+from starlette.responses import StreamingResponse
 
 from app.dto.request_dto import CodeReviewRequestDto, CodeChatRequestDto, RepositoryIndexRequestDto
 from app.service import CodeReviewService, CodeChatService
 
 app = FastAPI()
+
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": True,
+    "formatters": {
+        "default": {
+            "()": "uvicorn.logging.DefaultFormatter",
+            "fmt": "%(levelprefix)s %(message)s",
+            "use_colors": None,
+        },
+        "access": {
+            "()": "uvicorn.logging.AccessFormatter",
+            "fmt": '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',  # noqa: E501
+        },
+        "standard": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        },
+    },
+    "handlers": {
+        "default": {
+            "level": "INFO",
+            "formatter": "default",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+        },
+        "access": {
+            "formatter": "access",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+        },
+        "standard": {
+            "level": "INFO",
+            "formatter": "standard",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+        },
+    },
+    "loggers": {
+        "": {  # root logger
+            "level": "INFO",
+            "handlers": ["standard"],
+            "propagate": False,
+        },
+        "uvicorn": {
+            "handlers": ["default"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "uvicorn.access": {
+            "handlers": ["access"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "uvicorn.error": {
+            "level": "INFO",
+        },
+    },
+}
 
 
 @app.get("/assistants/models", status_code=status.HTTP_200_OK)
@@ -77,4 +135,5 @@ if __name__ == '__main__':
         reload=False,
         reload_delay=1,
         use_colors=True,
+        log_config=LOGGING_CONFIG,
     )
