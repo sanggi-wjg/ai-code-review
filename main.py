@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, List
 
 import requests
@@ -129,11 +130,12 @@ async def repositories_code_regenerate(request_dto: CodeChatRequestDto) -> Strea
 
 
 if __name__ == '__main__':
+    logging.config.dictConfig(LOGGING_CONFIG)
+
     uvicorn.run(
         "main:app",
         port=8000,
         reload=False,
         reload_delay=1,
         use_colors=True,
-        log_config=LOGGING_CONFIG,
     )

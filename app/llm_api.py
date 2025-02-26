@@ -1,14 +1,11 @@
 import logging
 import traceback
-from typing import List, Optional, Generator, Union
+from typing import List, Optional, Generator, Union, Tuple
 
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains.retrieval import create_retrieval_chain
+from langchain.globals import set_debug
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.vectorstores import VectorStoreRetriever
-from langchain_experimental.llms.ollama_functions import OllamaFunctions
 from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
 
@@ -114,7 +111,7 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
         cls,
         model: str,
         changes: str,
-    ) -> Union[Optional[CodeReviewResult], str]:
+    ) -> Optional[CodeReviewResult]:
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", cls.SYSTEM_MESSAGE_CODE_REVIEW),
@@ -122,70 +119,49 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
             ]
         )
 
-        # 필요시 추상화 ㄱ
-        if model in ("exaone3.5:7.8b",):
-            try:
-                llm = OllamaFunctions(model="exaone3.5:7.8b", format="json").bind_tools([CodeReviewResult])
-                chain = prompt | llm
-                chat_response = chain.invoke({"changes": changes})
-                if chat_response.response_metadata:
-                    logger.info(chat_response.response_metadata)
-
-                code_review_result = CodeReviewResult.model_validate(chat_response.tool_calls[0]["args"])
-                logger.info(code_review_result)
-                return code_review_result
-            except:
-                traceback.print_exc()
-                return None
-
-        elif model in ("qwen2.5-coder:14b", "deepseek-coder-v2:16b"):
-            try:
-                llm = ChatOllama(model=model)
-                chain = prompt | llm | StrOutputParser()
-                chat_response = chain.invoke({"changes": changes})
-                logger.info(chat_response)
-                return chat_response
-            except:
-                traceback.print_exc()
-                return None
-
-        else:
-            raise ValueError(f"Unsupported model: {model}")
-
-    # @classmethod
-    # def chat_to_review_code_with_unstructured_stream(cls, changes: str) -> Generator[str, None, None]:
-    #     prompt = ChatPromptTemplate.from_messages(
-    #         [
-    #             ("system", cls.SYSTEM_MESSAGE_CODE_REVIEW),
-    #             ("human", "{changes}"),
-    #         ]
-    #     )
-    #     llm = ChatOllama(model="qwen2.5-coder:14b")
-    #     chain = prompt | llm | StrOutputParser()
-    #
-    #     for token in chain.stream({"changes": changes}):
-    #         yield token
+        try:
+            logger.info("😢 model not applied to chat_to_review_code.")
+            llm = ChatOllama(model="qwen2.5:7b").with_structured_output(CodeReviewResult)
+            chain = prompt | llm
+            chat_response = chain.invoke({"changes": changes})
+            return chat_response
+            # for token in chain.stream({"changes": changes}):
+            #     yield token
+        except:
+            traceback.print_exc()
+            return None
 
     @classmethod
-    def chat_to_ask(cls, retriever: VectorStoreRetriever, search: str) -> dict:
+    def chat_to_ask(cls, documents: List[Tuple[Document, float]]) -> str:
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
                     """
-You are an AI assistant specialized in interpreting and refining search results from a vector database containing code-related texts. 
-Your primary task is to analyze retrieved code snippets and rephrase them in a way that accurately aligns with the user’s question.
+You are a professional software engineer and an expert in code analysis and summarization.
+You can quickly and accurately understand a given code and clearly summarize its core functions and behavior.
+Always respond in Korean.
 """.strip(),
                 ),
-                ("human", "{input}\n{context}"),
+                ("human", "Summarize the following code.\n{context}"),
             ]
         )
-        llm = ChatOllama(model="deepseek-r1:14b")
-        qa_chain = create_stuff_documents_chain(llm, prompt)
-        chain = create_retrieval_chain(retriever, qa_chain)
+        llm = ChatOllama(model="exaone3.5:7.8b")
+        # qa_chain = create_stuff_documents_chain(llm, prompt)
+        # chain = create_retrieval_chain(retriever, qa_chain)
+        # chat_response = chain.invoke({"input": search})
+        context = ""
+        for document, score in documents:
+            with open(document.metadata["source"], "r") as f:
+                context += f.read()
 
-        chat_response = chain.invoke({"input": "요약해주세요."})
-        logger.info(chat_response)
+        chain = prompt | llm | StrOutputParser()
+        chat_response = ""
+        for token in chain.stream({"context": context}):
+            print(token, end="", flush=True)
+            chat_response += token
+
+        logger.debug(chat_response)
         return chat_response
 
     @classmethod

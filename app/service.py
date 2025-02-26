@@ -125,8 +125,16 @@ class CodeChatService:
         search: str,
     ) -> dict:
         vector_store = cls.get_vector_store(repository)
-        retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 5})
-        return LlmAPI.chat_to_ask(retriever, search)
+        found_documents = vector_store.similarity_search_with_relevance_scores(
+            search,
+            k=5,
+            score_threshold=0.75,
+        )
+        logger.info(f"{found_documents}")
+        return {
+            "documents": found_documents,
+            "answer": LlmAPI.chat_to_ask(found_documents),
+        }
 
     @classmethod
     def chat_to_generate_code(
@@ -167,8 +175,13 @@ class CodeChatService:
         else:
             raise ValueError(f"Unsupported language: {language}")
 
-        documents = loader.load_and_split(splitter)
-        return documents
+        ignore_filenames = ("Test", "test")
+        documents = [
+            doc
+            for doc in loader.load()
+            if not any(ignore_filename in doc.metadata["source"] for ignore_filename in ignore_filenames)
+        ]
+        return splitter.split_documents(documents)
 
     @classmethod
     def get_embeddings(cls, repository: str) -> Embeddings:
@@ -195,6 +208,14 @@ class CodeChatService:
             collection_name=repository_replaced,
             collection_description=f"{repository} Vector Store",
             # metadata_field="metadata",
+            index_params=[
+                {
+                    "index_name": "index_vector",
+                    "field_name": "vector",
+                    "metric_type": "COSINE",
+                    "index_type": "IVF_FLAT",
+                }
+            ],
             enable_dynamic_field=True,
             auto_id=True,
             drop_old=drop_old,
