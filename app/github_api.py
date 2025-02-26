@@ -1,8 +1,10 @@
+import logging
 import os
 
 import git
 import requests
-from colorful_print import color
+
+logger = logging.getLogger(__name__)
 
 
 class GithubAPI:
@@ -66,7 +68,7 @@ class GithubAPI:
                 },
             )
             response.raise_for_status()
-            color.cyan(response.json(), italic=True)
+            logger.info(response.json())
         except requests.HTTPError as e:
             raise e
 

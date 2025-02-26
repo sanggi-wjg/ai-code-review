@@ -3,6 +3,6 @@
 *.iml
 *.ipr
 
-app/sources
+sources/**
 chroma*/**
 embeddings*/**

@@ -1,14 +1,14 @@
+import logging
 import os.path
 from typing import Generator, List
 
-from colorful_print import color
 from langchain.embeddings import CacheBackedEmbeddings
 from langchain.storage import LocalFileStore
-from langchain_chroma import Chroma
 from langchain_community.document_loaders import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
+from langchain_milvus import Milvus
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
 from unidiff import Hunk, PatchedFile
@@ -16,6 +16,8 @@ from unidiff import Hunk, PatchedFile
 from app.github_api import GithubAPI
 from app.llm_api import LlmAPI, CodeReviewResult
 from app.utils import split_pr_diff_by_file, split_patch_files_by_patch_types
+
+logger = logging.getLogger(__name__)
 
 
 class CodeReviewService:
@@ -28,7 +30,7 @@ class CodeReviewService:
         repository: str,
         pr_number: int,
     ):
-        color.green(f"{repository}:{pr_number} review start", underline=True)
+        logger.info(f"{repository}:{pr_number} review start")
 
         pr_response = GithubAPI.get_pr(github_token, repository, pr_number)
         head_commit_id = pr_response.json()["head"]["sha"]
@@ -42,7 +44,7 @@ class CodeReviewService:
             hunk: Hunk
             hunk = patch[0]
             start_line, end_line = hunk.target_start, hunk.target_length
-            color.green(f"\n{patch.path}, review start", bold=True, underline=True)
+            logger.info(f"\n{patch.path}, review start")
 
             cls._review_and_left_comment(
                 model=model,
@@ -60,7 +62,7 @@ class CodeReviewService:
             hunk: Hunk
             hunk = max(patch, key=lambda x: x.added)
             start_line, end_line = hunk.target_start, hunk.target_start + hunk.added
-            color.green(f"\n{patch.path}, review start", bold=True, underline=True)
+            logger.info(f"\n{patch.path}, review start")
 
             cls._review_and_left_comment(
                 model=model,
@@ -74,7 +76,7 @@ class CodeReviewService:
                 end_line=end_line,
             )
 
-        color.green(f"\n{repository}:{pr_number} review end", underline=True)
+        logger.info(f"\n{repository}:{pr_number} review end")
 
     @classmethod
     def _review_and_left_comment(
@@ -93,7 +95,7 @@ class CodeReviewService:
         if review_result is None:
             return
 
-        color.yellow(review_result)
+        logger.info(review_result)
         if isinstance(review_result, CodeReviewResult):
             if not review_result.has_issues:
                 return
@@ -117,21 +119,22 @@ class CodeReviewService:
 class CodeChatService:
 
     @classmethod
-    def chat_to_coding_assist(
+    def chat_about_repository(
         cls,
-        code: str,
         repository: str,
-        language: str,
         search: str,
-        consideration: str,
-    ) -> Generator[str, None, None]:
-        vector_db = cls.get_vector_store(repository, language)
-        documents = vector_db.similarity_search(query=search, k=5)
-        return LlmAPI.chat_to_coding_assist_stream(
-            documents,
-            code,
-            consideration,
+    ) -> dict:
+        vector_store = cls.get_vector_store(repository)
+        found_documents = vector_store.similarity_search_with_relevance_scores(
+            search,
+            k=5,
+            score_threshold=0.75,
         )
+        logger.info(f"{found_documents}")
+        return {
+            "documents": found_documents,
+            "answer": LlmAPI.chat_to_ask(found_documents),
+        }
 
     @classmethod
     def chat_to_generate_code(
@@ -142,7 +145,7 @@ class CodeChatService:
         search: str,
         consideration: str,
     ) -> Generator[str, None, None]:
-        vector_db = cls.get_vector_store(repository, language)
+        vector_db = cls.get_vector_store(repository)
         documents = vector_db.similarity_search(query=search, k=5)
         return LlmAPI.chat_to_generate_code_stream(
             documents,
@@ -151,7 +154,7 @@ class CodeChatService:
         )
 
     @classmethod
-    def _load_documents(cls, repository: str, language: str) -> List[Document]:
+    def load_documents_from(cls, repository: str, language: str) -> List[Document]:
         source_path = os.path.join(os.getcwd(), "sources", repository)
         GithubAPI.clone_or_pull(repository, source_path)
 
@@ -172,31 +175,59 @@ class CodeChatService:
         else:
             raise ValueError(f"Unsupported language: {language}")
 
-        documents = loader.load_and_split(splitter)
-        return documents
+        ignore_filenames = ("Test", "test")
+        documents = [
+            doc
+            for doc in loader.load()
+            if not any(ignore_filename in doc.metadata["source"] for ignore_filename in ignore_filenames)
+        ]
+        return splitter.split_documents(documents)
 
     @classmethod
-    def _get_embeddings(cls, repository: str) -> Embeddings:
+    def get_embeddings(cls, repository: str) -> Embeddings:
+        repository_replaced = repository.replace("/", "_")
+
         embeddings = OllamaEmbeddings(model="unclemusclez/jina-embeddings-v2-base-code")
         cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
             underlying_embeddings=embeddings,
-            document_embedding_cache=LocalFileStore(f"embeddings.cache.{repository}"),
-            namespace=f"{embeddings.model}.{repository}",
+            document_embedding_cache=LocalFileStore(f"embeddings.cache.{repository_replaced}"),
+            namespace=f"{embeddings.model}.{repository_replaced}",
         )
         return cached_embeddings
 
     @classmethod
-    def get_vector_store(cls, repository: str, language: str) -> VectorStore:
-        repository_replaced = repository.replace("/", ".")
+    def get_vector_store(cls, repository: str, drop_old: bool = False) -> VectorStore:
+        def escape_collection_name(value: str) -> str:
+            # If u need, using regex
+            return value.replace("/", "_").replace("-", "_")
 
-        documents = cls._load_documents(repository, language)
-        embeddings = cls._get_embeddings(repository_replaced)
-        return Chroma.from_documents(
-            documents=documents,
-            embedding=embeddings,
-            persist_directory=f"chroma.{repository_replaced}",
+        repository_replaced = escape_collection_name(repository)
+        return Milvus(
+            embedding_function=cls.get_embeddings(repository),
+            connection_args={"uri": os.getenv("MILVUS_URI", "http://localhost:19530")},
+            collection_name=repository_replaced,
+            collection_description=f"{repository} Vector Store",
+            # metadata_field="metadata",
+            index_params=[
+                {
+                    "index_name": "index_vector",
+                    "field_name": "vector",
+                    "metric_type": "COSINE",
+                    "index_type": "IVF_FLAT",
+                }
+            ],
+            enable_dynamic_field=True,
+            auto_id=True,
+            drop_old=drop_old,
         )
 
     @classmethod
-    def index(cls, repository: str, language: str):
-        return cls.get_vector_store(repository, language)
+    def index(cls, repository: str, language: str) -> List[str]:
+        logger.info("Index start")
+
+        documents = cls.load_documents_from(repository, language)
+        vector_store = cls.get_vector_store(repository, drop_old=True)
+        created_ids = vector_store.add_documents(documents)
+
+        logger.info("Index finished")
+        return created_ids

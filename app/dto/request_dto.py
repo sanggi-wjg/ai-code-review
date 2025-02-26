@@ -15,6 +15,11 @@ class RepositoryIndexRequestDto(BaseModel):
 
 
 class CodeChatRequestDto(BaseModel):
+    repository: str
+    search: str = Field("", description="검색")
+
+
+class CodeGenerationRequestDto(BaseModel):
     code: str
     repository: str
     language: str = Field("", description="언어, python, kotlin, ...")

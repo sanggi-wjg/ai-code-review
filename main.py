@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, List
 
 import requests
@@ -11,16 +12,74 @@ from app.service import CodeReviewService, CodeChatService
 
 app = FastAPI()
 
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": True,
+    "formatters": {
+        "default": {
+            "()": "uvicorn.logging.DefaultFormatter",
+            "fmt": "%(levelprefix)s %(message)s",
+            "use_colors": None,
+        },
+        "access": {
+            "()": "uvicorn.logging.AccessFormatter",
+            "fmt": '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',  # noqa: E501
+        },
+        "standard": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        },
+    },
+    "handlers": {
+        "default": {
+            "level": "INFO",
+            "formatter": "default",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+        },
+        "access": {
+            "formatter": "access",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+        },
+        "standard": {
+            "level": "INFO",
+            "formatter": "standard",
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+        },
+    },
+    "loggers": {
+        "": {  # root logger
+            "level": "INFO",
+            "handlers": ["standard"],
+            "propagate": False,
+        },
+        "uvicorn": {
+            "handlers": ["default"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "uvicorn.access": {
+            "handlers": ["access"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "uvicorn.error": {
+            "level": "INFO",
+        },
+    },
+}
+
 
 @app.get("/assistants/models", status_code=status.HTTP_200_OK)
-async def models() -> List[str]:
+async def get_models() -> List[str]:
     response = requests.get("http://localhost:11434/api/tags")
     response.raise_for_status()
     return [r["name"] for r in response.json()["models"]]
 
 
 @app.post("/assistant/review", status_code=status.HTTP_202_ACCEPTED)
-async def code_review_request(
+async def request_code_review(
     request_dto: CodeReviewRequestDto,
     background_tasks: BackgroundTasks,
 ) -> Dict[str, str]:
@@ -35,7 +94,7 @@ async def code_review_request(
 
 
 @app.put("/assistant/repositories/index", status_code=status.HTTP_202_ACCEPTED)
-async def repositories_index(
+async def index_repository(
     request_dto: RepositoryIndexRequestDto,
     background_tasks: BackgroundTasks,
 ) -> Dict[str, str]:
@@ -48,17 +107,10 @@ async def repositories_index(
 
 
 @app.post("/assistant/repositories/chat", status_code=status.HTTP_200_OK)
-async def repositories_code_chat(request_dto: CodeChatRequestDto) -> StreamingResponse:
-    return StreamingResponse(
-        CodeChatService.chat_to_coding_assist(
-            request_dto.code,
-            request_dto.repository,
-            request_dto.language,
-            request_dto.search,
-            request_dto.consideration,
-        ),
-        status_code=status.HTTP_200_OK,
-        media_type="text/event-stream",
+async def repositories_code_chat(request_dto: CodeChatRequestDto) -> dict:
+    return CodeChatService.chat_about_repository(
+        request_dto.repository,
+        request_dto.search,
     )
 
 
@@ -78,6 +130,8 @@ async def repositories_code_regenerate(request_dto: CodeChatRequestDto) -> Strea
 
 
 if __name__ == '__main__':
+    logging.config.dictConfig(LOGGING_CONFIG)
+
     uvicorn.run(
         "main:app",
         port=8000,

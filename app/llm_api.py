@@ -1,13 +1,15 @@
+import logging
 import traceback
-from typing import List, Optional, Generator, Union
+from typing import List, Optional, Generator, Union, Tuple
 
-from colorful_print import color
+from langchain.globals import set_debug
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_experimental.llms.ollama_functions import OllamaFunctions
 from langchain_ollama import ChatOllama
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class CodeReviewIssue(BaseModel):
@@ -109,7 +111,7 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
         cls,
         model: str,
         changes: str,
-    ) -> Union[Optional[CodeReviewResult], str]:
+    ) -> Optional[CodeReviewResult]:
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", cls.SYSTEM_MESSAGE_CODE_REVIEW),
@@ -117,83 +119,50 @@ Always respond in Korean. Do not use any other language unless explicitly asked.
             ]
         )
 
-        if model in ("exaone3.5:7.8b",):
-            try:
-                llm = OllamaFunctions(model="exaone3.5:7.8b", format="json").bind_tools([CodeReviewResult])
-                chain = prompt | llm
-                chat_response = chain.invoke({"changes": changes})
-                if chat_response.response_metadata:
-                    color.yellow(chat_response.response_metadata)
-
-                code_review_result = CodeReviewResult.model_validate(chat_response.tool_calls[0]["args"])
-                return code_review_result
-            except:
-                traceback.print_exc()
-                return None
-
-        elif model in ("qwen2.5-coder:14b", "deepseek-coder-v2:16b"):
-            try:
-                llm = ChatOllama(model=model)
-                chain = prompt | llm | StrOutputParser()
-                chat_response = chain.invoke({"changes": changes})
-                return chat_response
-            except:
-                traceback.print_exc()
-                return None
-
-        else:
-            raise ValueError(f"Unsupported model: {model}")
+        try:
+            logger.info("😢 model not applied to chat_to_review_code.")
+            llm = ChatOllama(model="qwen2.5:7b").with_structured_output(CodeReviewResult)
+            chain = prompt | llm
+            chat_response = chain.invoke({"changes": changes})
+            return chat_response
+            # for token in chain.stream({"changes": changes}):
+            #     yield token
+        except:
+            traceback.print_exc()
+            return None
 
     @classmethod
-    def chat_to_review_code_with_unstructured_stream(cls, changes: str) -> Generator[str, None, None]:
+    def chat_to_ask(cls, documents: List[Tuple[Document, float]]) -> str:
         prompt = ChatPromptTemplate.from_messages(
             [
-                ("system", cls.SYSTEM_MESSAGE_CODE_REVIEW),
-                ("human", "{changes}"),
+                (
+                    "system",
+                    """
+You are a professional software engineer and an expert in code analysis and summarization.
+You can quickly and accurately understand a given code and clearly summarize its core functions and behavior.
+Always respond in Korean.
+""".strip(),
+                ),
+                ("human", "Summarize the following code.\n{context}"),
             ]
         )
-        llm = ChatOllama(model="qwen2.5-coder:14b")
+        llm = ChatOllama(model="exaone3.5:7.8b")
+        # qa_chain = create_stuff_documents_chain(llm, prompt)
+        # chain = create_retrieval_chain(retriever, qa_chain)
+        # chat_response = chain.invoke({"input": search})
+        context = ""
+        for document, score in documents:
+            with open(document.metadata["source"], "r") as f:
+                context += f.read()
+
         chain = prompt | llm | StrOutputParser()
+        chat_response = ""
+        for token in chain.stream({"context": context}):
+            print(token, end="", flush=True)
+            chat_response += token
 
-        for token in chain.stream({"changes": changes}):
-            yield token
-
-    @classmethod
-    def chat_to_coding_assist_stream(
-        cls,
-        documents: List[Document],
-        code: str,
-        consideration: str,
-    ) -> Generator[str, None, None]:
-        user_message = f"""
-Make this CODE better.
-
-# CONSIDERATION: 
-{consideration}
-
-# PROJECT SOURCE CODE SEARCH: 
-{documents}
-
-# CODE:
-{code}""".strip()
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", cls.SYSTEM_MESSAGE_CODING_ASSIST),
-                ("human", user_message),
-            ]
-        )
-        # llm = ChatOllama(model="deepseek-coder-v2:16b")
-        llm = ChatOllama(model="qwen2.5-coder:14b")
-        chain = prompt | llm | StrOutputParser()
-
-        for token in chain.stream(
-            {
-                "consideration": consideration,
-                "documents": [doc.page_content for doc in documents],
-                "code": code,
-            }
-        ):
-            yield token
+        logger.debug(chat_response)
+        return chat_response
 
     @classmethod
     def chat_to_generate_code_stream(
