@@ -25,12 +25,11 @@ class CodeReviewService:
     @classmethod
     def review(
         cls,
-        model: str,
         github_token: str,
         repository: str,
         pr_number: int,
     ):
-        logger.info(f"{repository}:{pr_number} review start")
+        logger.info(f"🚀 Repository: {repository} / Pull Request: {pr_number} start reviewing")
 
         pr_response = GithubAPI.get_pr(github_token, repository, pr_number)
         head_commit_id = pr_response.json()["head"]["sha"]
@@ -44,10 +43,9 @@ class CodeReviewService:
             hunk: Hunk
             hunk = patch[0]
             start_line, end_line = hunk.target_start, hunk.target_length
-            logger.info(f"\n{patch.path}, review start")
+            logger.info(f"🤖 {patch.path}, review start")
 
             cls._review_and_left_comment(
-                model=model,
                 github_token=github_token,
                 repository=repository,
                 pr_number=pr_number,
@@ -62,10 +60,9 @@ class CodeReviewService:
             hunk: Hunk
             hunk = max(patch, key=lambda x: x.added)
             start_line, end_line = hunk.target_start, hunk.target_start + hunk.added
-            logger.info(f"\n{patch.path}, review start")
+            logger.info(f"🤖 {patch.path}, review start")
 
             cls._review_and_left_comment(
-                model=model,
                 github_token=github_token,
                 repository=repository,
                 pr_number=pr_number,
@@ -76,12 +73,11 @@ class CodeReviewService:
                 end_line=end_line,
             )
 
-        logger.info(f"\n{repository}:{pr_number} review end")
+        logger.info(f"👍 {repository}:{pr_number} review end")
 
     @classmethod
     def _review_and_left_comment(
         cls,
-        model: str,
         github_token: str,
         repository: str,
         pr_number: int,
@@ -91,23 +87,18 @@ class CodeReviewService:
         start_line: int,
         end_line: int,
     ):
-        review_result = LlmAPI.chat_to_review_code(model, diff)
+        review_result = LlmAPI.chat_to_review_code(diff)
         if review_result is None:
             return
-
         logger.info(review_result)
-        if isinstance(review_result, CodeReviewResult):
-            if not review_result.has_issues:
-                return
-            comment = review_result.format_to_comment()
-        else:
-            comment = review_result
+        # if not review_result.has_issues:
+        #     return
 
         GithubAPI.create_review_comment(
             token=github_token,
             repository=repository,
             pr_number=pr_number,
-            comment=comment,
+            comment=review_result.format_to_comment(),
             commit_id=head_commit_id,
             filename=patch.path,
             start_line=start_line,

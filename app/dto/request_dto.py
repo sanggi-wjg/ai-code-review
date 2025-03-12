@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 
 
 class CodeReviewRequestDto(BaseModel):
-    model: str
     github_token: str
     repository: str
     pr_number: int

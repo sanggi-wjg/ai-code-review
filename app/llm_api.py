@@ -65,7 +65,7 @@ class CodeReviewResult(BaseModel):
                 "passed": "# ✅ 코드 리뷰 완료",
                 "needs_changes": "# ⚠️ 수정이 필요한 사항이 있습니다",
                 "critical_issues": "# 🚨 중요한 문제가 발견 되었습니다 🚨",
-            }.get(status, "# 코드 리뷰 결과")
+            }.get(status, "# 🤖 코드 리뷰 완료")
 
         def get_issue_category_title(category_type: str) -> str:
             return {
@@ -94,35 +94,53 @@ class CodeReviewResult(BaseModel):
 class LlmAPI:
 
     SYSTEM_MESSAGE_CODE_REVIEW = """
-You are a meticulous and highly skilled code reviewer. Your task is to analyze the following code changes and provide feedback if you identify any of the following critical issues:
+You are an expert-level code reviewer specializing in software security, performance optimization, and best coding practices. Your role is to meticulously analyze the given code changes and provide constructive feedback.
+
+<REQUIREMENTS>
+Your feedback must be **concise, clear, and actionable** to help improve the code quality. Summarize your responses to enhance readability. If issues are found, suggest specific improvements or alternative solutions.
+**Always respond in Korean.** Do not use any other language unless explicitly requested.
+
+When analyzing the code, consider the following aspects:
 - Inappropriate function or variable names that are misleading, unclear, or violate naming conventions, making the code harder to understand or maintain.
 - Security vulnerabilities, such as injection risks, improper authentication, data leaks, or insecure dependencies.
 - Performance bottlenecks, including inefficient algorithms, redundant computations, memory leaks, or unnecessary resource usage.
-        
-Summarize your answers to make them as readable as possible. If you identify any issues, please also provide improvements or alternative solutions to address the problem, ensuring that your feedback is actionable and leads to a better solution.
-Always respond in Korean. Do not use any other language unless explicitly asked.""".strip()
+- Ensure that your feedback helps developers **improve code quality while maintaining security and efficiency.
+</REQUIREMENTS>
+
+<OUTPUT_FORMAT>
+You must return the output in the following structured format as a JSON object, ensuring compatibility with `langchain with_structured_output`. 
+
+{{
+  "summary": "코드 리뷰의 전체 요약을 제공하세요. (예: 코드가 전반적으로 좋은 구조를 가지고 있으나, 보안 취약점이 발견됨)",
+  "issues": [
+    {{
+      "category": "naming | security | performance",
+      "description": "발견된 문제를 상세히 설명하세요.",
+      "suggestion": "구체적인 코드 개선 방법을 제시하세요. 필요하면 코드 예제 포함.",
+      "severity": "low | medium | high"
+    }}
+  ],
+  "has_issues": true | false,
+  "review_status": "passed | needs_changes | critical_issues"
+}}
+</OUTPUT_FORMAT>
+""".strip()
 
     SYSTEM_MESSAGE_CODING_ASSIST = """
 You are a highly skilled software engineer specializing in developing secure and high-performance backend systems. Your goal is to generate optimized, well-structured, and maintainable code.
 Always respond in Korean. Do not use any other language unless explicitly asked.""".strip()
 
     @classmethod
-    def chat_to_review_code(
-        cls,
-        model: str,
-        changes: str,
-    ) -> Optional[CodeReviewResult]:
+    def chat_to_review_code(cls, changes: str) -> Optional[CodeReviewResult]:
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", cls.SYSTEM_MESSAGE_CODE_REVIEW),
                 ("human", "{changes}"),
             ]
         )
-
+        llm = ChatOllama(model="qwen2.5:14b-instruct-q8_0").with_structured_output(CodeReviewResult)
+        chain = prompt | llm
         try:
-            logger.info("😢 model not applied to chat_to_review_code.")
-            llm = ChatOllama(model="qwen2.5:7b").with_structured_output(CodeReviewResult)
-            chain = prompt | llm
             chat_response = chain.invoke({"changes": changes})
             return chat_response
             # for token in chain.stream({"changes": changes}):

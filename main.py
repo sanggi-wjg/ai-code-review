@@ -85,7 +85,6 @@ async def request_code_review(
 ) -> Dict[str, str]:
     background_tasks.add_task(
         CodeReviewService.review,
-        request_dto.model,
         request_dto.github_token,
         request_dto.repository,
         request_dto.pr_number,
