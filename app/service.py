@@ -91,8 +91,8 @@ class CodeReviewService:
         if review_result is None:
             return
         logger.info(review_result)
-        # if not review_result.has_issues:
-        #     return
+        if not review_result.has_issues:
+            return
 
         GithubAPI.create_review_comment(
             token=github_token,
