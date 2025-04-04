@@ -14,7 +14,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
 from unidiff import Hunk, PatchedFile
 
 from app.github_api import GithubAPI
-from app.llm_api import LlmAPI, CodeReviewResult
+from app.llm_api import LlmAPI
 from app.utils import split_pr_diff_by_file, split_patch_files_by_patch_types
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class CodeReviewService:
         repository: str,
         pr_number: int,
     ):
-        logger.info(f"🚀 Repository: {repository} / Pull Request: {pr_number} start reviewing")
+        logger.info(f"🚀🚀 Repository: {repository} / Pull Request: {pr_number} / start reviewing  🚀🚀")
 
         pr_response = GithubAPI.get_pr(github_token, repository, pr_number)
         head_commit_id = pr_response.json()["head"]["sha"]
@@ -40,10 +40,9 @@ class CodeReviewService:
         added_patch_files, modified_patch_files = split_patch_files_by_patch_types(pr_diff_response.text)
 
         for patch in added_patch_files:
-            hunk: Hunk
-            hunk = patch[0]
+            hunk: Hunk = patch[0]
             start_line, end_line = hunk.target_start, hunk.target_length
-            logger.info(f"🤖 {patch.path}, review start")
+            logger.info(f"🤖🤖 {patch.path}, review start")
 
             cls._review_and_left_comment(
                 github_token=github_token,
@@ -57,10 +56,9 @@ class CodeReviewService:
             )
 
         for patch in modified_patch_files:
-            hunk: Hunk
-            hunk = max(patch, key=lambda x: x.added)
-            start_line, end_line = hunk.target_start, hunk.target_start + hunk.added
-            logger.info(f"🤖 {patch.path}, review start")
+            hunk: Hunk = max(patch, key=lambda x: x.added)
+            start_line, end_line = hunk.target_start, hunk.target_start + hunk.target_length
+            logger.info(f"🤖🤖 {patch.path}, review start")
 
             cls._review_and_left_comment(
                 github_token=github_token,
@@ -73,7 +71,7 @@ class CodeReviewService:
                 end_line=end_line,
             )
 
-        logger.info(f"👍 {repository}:{pr_number} review end")
+        logger.info(f"😎👍 {repository}:{pr_number} review end 😎👍")
 
     @classmethod
     def _review_and_left_comment(
@@ -88,10 +86,8 @@ class CodeReviewService:
         end_line: int,
     ):
         review_result = LlmAPI.chat_to_review_code(diff)
-        if review_result is None:
-            return
-        logger.info(review_result)
-        if not review_result.has_issues:
+        logger.info(f"Review result: {review_result}")
+        if review_result is None or not review_result.has_issues:
             return
 
         GithubAPI.create_review_comment(
