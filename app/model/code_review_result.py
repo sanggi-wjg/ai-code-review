@@ -45,10 +45,10 @@ class CodeReviewResult(BaseModel):
 
         def get_status_header(status: str) -> str:
             return {
-                "passed": "# ✅ 코드 리뷰 완료 😎",
-                "needs_changes": "# ⚠️ 수정이 필요한 사항이 있습니다 ⚠️",
-                "critical_issues": "# 🚨 중요한 문제가 발견 되었습니다 🚨",
-            }.get(status, "# 🤖 코드 리뷰 완료 🤖")
+                "passed": "# 😎 코드 리뷰 완료",
+                "needs_changes": "# ⚠️ 수정이 필요한 사항이 있습니다",
+                "critical_issues": "# 🚨 중요한 문제가 발견 되었습니다",
+            }.get(status, "# 🤖 코드 리뷰 완료")
 
         def get_issue_category_title(category_type: str) -> str:
             return {

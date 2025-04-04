@@ -30,6 +30,7 @@ class CodeReviewService:
         pr_number: int,
     ):
         logger.info(f"🚀🚀 Repository: {repository} / Pull Request: {pr_number} / start reviewing  🚀🚀")
+        GithubAPI.show_rate_limit(github_token)
 
         pr_response = GithubAPI.get_pr(github_token, repository, pr_number)
         head_commit_id = pr_response.json()["head"]["sha"]
@@ -57,7 +58,7 @@ class CodeReviewService:
 
         for patch in modified_patch_files:
             hunk: Hunk = max(patch, key=lambda x: x.added)
-            start_line, end_line = hunk.target_start, hunk.target_start + hunk.target_length
+            start_line, end_line = hunk.target_start, hunk.target_start + hunk.target_length - 1
             logger.info(f"🤖🤖 {patch.path}, review start")
 
             cls._review_and_left_comment(

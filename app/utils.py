@@ -12,16 +12,27 @@ from unidiff import PatchSet, PatchedFile
 
 def split_pr_diff_by_file(diff: str) -> Dict[str, str]:
     diff_by_file = {}
-    files = re.split(r'(diff --git a/.*? b/.*?)\n', diff)[1:]
 
-    for i in range(0, len(files), 2):
-        file_header = files[i]
-        file_diff = files[i + 1]
+    parts = re.split(r'(?=^diff --git a/.*? b/.*?)', diff, flags=re.MULTILINE)
+    for part in parts:
+        if not part.strip():
+            continue
 
-        match = re.search(r'diff --git a/(.*?) b/\1', file_header)
+        match = re.search(r'diff --git a/(.*?) b/(.*?)\n', part)
         if match:
-            filename = match.group(1)
-            diff_by_file[filename] = file_diff.strip()
+            filename = match.group(2)
+            diff_by_file[filename] = part.strip()
+
+    # files = re.split(r'(diff --git a/.*? b/.*?)\n', diff)[1:]
+    #
+    # for i in range(0, len(files), 2):
+    #     file_header = files[i]
+    #     file_diff = files[i + 1]
+    #
+    #     match = re.search(r'diff --git a/(.*?) b/\1', file_header)
+    #     if match:
+    #         filename = match.group(1)
+    #         diff_by_file[filename] = file_diff.strip()
 
     return diff_by_file
 
