@@ -25,6 +25,7 @@ class LlmAPI:
         )
         llm = ChatOllama(
             model="qwen2.5:32b",
+            # model="gemma3:27b",
             temperature=0.3,
             top_k=20,
             top_p=0.8,
